@@ -93,3 +93,7 @@ To contribute to the project, follow these steps:
 3. Install in development mode: `pip install -e .`
 4. Run the tests: `pytest` (requires pytest to be installed)
 5. Make your changes and submit a pull request 
+
+## Visual Diagrams
+Install mermaid to visualize the architecture diagram
+npx @mermaid-js/mermaid-cli -i docs/architecture.md -o architecture.png
