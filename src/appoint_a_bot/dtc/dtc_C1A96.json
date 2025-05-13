@@ -1,0 +1,38 @@
+{
+    "VIN":	"MNTCBND23A003XXXX",
+    "DTC": {"Code": "C1A96", "Urgency": "Critical"},
+      "Model Code":	"D2300319",
+      "Model Description":	"NAVARA 4X4 2.3 DSL AUTO DC SL",
+      "Warranty Start Date": "May 31, 2024",
+      "Warranty End Date": "May 30, 2027",
+      "Engine Number":	"488803A",
+      "Model Year":	"2024",
+      "Sold Date":	"May 31, 2024",
+      "Service Date History":
+        [
+        {
+            "Service Date": "24 May 2024",
+          "Mileage":	18,
+          "Age Month": 1,
+          "Dealership": "Armidale Nissan ",
+          "Customer": "Armidale Automotive",
+          "Job Description": "DDTB - Dealer Delivery"
+          },
+        {
+            "Service Date": "12 Jul 2024 ",
+          "Mileage":	3000,
+          "Age Month": 2,
+          "Dealership": "Armidale Nissan ",
+          "Customer": "Mr. Abcde",
+          "Job Description": "S001 - GENERIC"
+          },
+        {
+            "Service Date": "09 May 2025",
+          "Mileage":	21458,
+          "Age Month": 12,
+          "Dealership": "Armidale Nissan ",
+          "Customer": "Mr. Abcde",
+          "Job Description": "Replace brake pads - front"
+          }
+      ]
+  }

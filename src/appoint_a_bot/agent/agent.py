@@ -96,7 +96,31 @@ class Agent:
         """
         response_type = customer_response.get("type")
         
-        if response_type == "accept":
+        if response_type == "start":
+            # Special case for starting the conversation
+            # No action needed, just return the current recommendation
+            if self.current_recommendation:
+                slot_time = datetime.fromisoformat(self.current_recommendation.get("start_time"))
+                formatted_time = slot_time.strftime("%A, %B %d at %I:%M %p")
+                
+                return {
+                    "status": "recommendation",
+                    "message": f"I found an available appointment on {formatted_time}. Would you like to book this appointment?",
+                    "slot": self.current_recommendation,
+                    "require_input": True,
+                    "input_type": "yes_no"
+                }
+            else:
+                # If no recommendation yet, just ask for preferences
+                self.conversation_state = "awaiting_date_range"
+                return {
+                    "status": "date_request",
+                    "message": "What date range would you prefer for your appointment?",
+                    "require_input": True,
+                    "input_type": "date_range"
+                }
+        
+        elif response_type == "accept":
             # Customer accepted the recommendation
             return self._handle_booking_confirmation()
             
@@ -114,6 +138,13 @@ class Agent:
             # Customer provided a date range
             start_date = customer_response.get("start_date")
             end_date = customer_response.get("end_date")
+            
+            # Convert string dates to datetime if needed
+            if isinstance(start_date, str):
+                start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                
+            if isinstance(end_date, str):
+                end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
             
             # Update preferences
             self.customer_preferences["start_date"] = start_date
@@ -164,26 +195,38 @@ class Agent:
         Returns:
             Confirmation response
         """
-        if not self.current_recommendation:
+        try:
+            if not self.current_recommendation:
+                self.conversation_state = "error"
+                return {
+                    "status": "error",
+                    "message": "No appointment was selected. Let's start over.",
+                    "require_input": False
+                }
+                
+            slot_time_str = self.current_recommendation.get("start_time")
+            slot_time = datetime.fromisoformat(slot_time_str.replace('Z', '+00:00') if isinstance(slot_time_str, str) else slot_time_str)
+            formatted_time = slot_time.strftime("%A, %B %d at %I:%M %p")
+            
+            # In a real system, this would make an API call to book the appointment
+            self.conversation_state = "completed"
+            
+            return {
+                "status": "confirmation",
+                "message": f"Great! Your appointment is confirmed for {formatted_time}.",
+                "slot": self.current_recommendation,
+                "require_input": False
+            }
+        except Exception as e:
+            import traceback
+            print(f"DEBUG ERROR in booking confirmation: {str(e)}")
+            print(traceback.format_exc())
             self.conversation_state = "error"
             return {
                 "status": "error",
-                "message": "No appointment was selected. Let's start over.",
+                "message": f"Sorry, I encountered an error while confirming your booking: {str(e)}.",
                 "require_input": False
             }
-            
-        slot_time = datetime.fromisoformat(self.current_recommendation.get("start_time"))
-        formatted_time = slot_time.strftime("%A, %B %d at %I:%M %p")
-        
-        # In a real system, this would make an API call to book the appointment
-        self.conversation_state = "completed"
-        
-        return {
-            "status": "confirmation",
-            "message": f"Great! Your appointment is confirmed for {formatted_time}.",
-            "slot": self.current_recommendation,
-            "require_input": False
-        }
     
     def _get_updated_recommendations(self) -> Dict[str, Any]:
         """
@@ -192,43 +235,76 @@ class Agent:
         Returns:
             Updated recommendation response
         """
-        # Fetch time slots with updated preferences
-        slots = self.mcp_connector.fetch_time_slots(
-            start_date=self.customer_preferences["start_date"],
-            end_date=self.customer_preferences["end_date"],
-            location_id=self.customer_preferences["location_id"],
-            include_transport=self.customer_preferences["transport_required"]
-        )
-        
-        # Filter slots based on criteria
-        filtered_slots = self.analyzer.filter_slots_by_criteria(slots, self.customer_preferences)
-        
-        if not filtered_slots:
-            self.conversation_state = "no_slots"
+        try:
+            # Ensure start_date and end_date are datetime objects
+            start_date = self.customer_preferences["start_date"]
+            end_date = self.customer_preferences["end_date"]
+            
+            print(f"DEBUG: start_date type={type(start_date)}, value={start_date}")
+            print(f"DEBUG: end_date type={type(end_date)}, value={end_date}")
+            
+            # Convert string dates to datetime if needed
+            if isinstance(start_date, str):
+                start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                self.customer_preferences["start_date"] = start_date
+                
+            if isinstance(end_date, str):
+                end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                self.customer_preferences["end_date"] = end_date
+            
+            # Fetch time slots with updated preferences
+            slots = self.mcp_connector.fetch_time_slots(
+                start_date=start_date,
+                end_date=end_date,
+                location_id=self.customer_preferences["location_id"],
+                include_transport=self.customer_preferences["transport_required"]
+            )
+            
+            # Filter slots based on criteria
+            filtered_slots = self.analyzer.filter_slots_by_criteria(slots, self.customer_preferences)
+            
+            if not filtered_slots:
+                self.conversation_state = "no_slots"
+                return {
+                    "status": "no_slots",
+                    "message": "I couldn't find any appointments matching your preferences. Would you like to try different dates?",
+                    "require_input": True,
+                    "input_type": "date_range"
+                }
+            
+            # Find the closest time slot
+            closest_slot = self.analyzer.find_closest_time_slot(filtered_slots)[0]
+            self.current_recommendation = closest_slot
+            self.conversation_state = "recommendation"
+            
+            print(f"DEBUG: closest_slot={closest_slot}")
+            
+            slot_time_str = closest_slot.get("start_time")
+            print(f"DEBUG: slot_time_str type={type(slot_time_str)}, value={slot_time_str}")
+            
+            slot_time = datetime.fromisoformat(slot_time_str.replace('Z', '+00:00') if isinstance(slot_time_str, str) else slot_time_str)
+            formatted_time = slot_time.strftime("%A, %B %d at %I:%M %p")
+            
+            transport_msg = " with transport included" if self.customer_preferences["transport_required"] else ""
+            
             return {
-                "status": "no_slots",
-                "message": "I couldn't find any appointments matching your preferences. Would you like to try different dates?",
+                "status": "recommendation",
+                "message": f"I found an available appointment on {formatted_time}{transport_msg}. Would you like to book this appointment?",
+                "slot": closest_slot,
+                "require_input": True,
+                "input_type": "yes_no"
+            }
+        except Exception as e:
+            import traceback
+            print(f"DEBUG ERROR: {str(e)}")
+            print(traceback.format_exc())
+            self.conversation_state = "error"
+            return {
+                "status": "error",
+                "message": f"Sorry, I encountered an error: {str(e)}. Would you like to try different dates?",
                 "require_input": True,
                 "input_type": "date_range"
             }
-        
-        # Find the closest time slot
-        closest_slot = self.analyzer.find_closest_time_slot(filtered_slots)[0]
-        self.current_recommendation = closest_slot
-        self.conversation_state = "recommendation"
-        
-        slot_time = datetime.fromisoformat(closest_slot.get("start_time"))
-        formatted_time = slot_time.strftime("%A, %B %d at %I:%M %p")
-        
-        transport_msg = " with transport included" if self.customer_preferences["transport_required"] else ""
-        
-        return {
-            "status": "recommendation",
-            "message": f"I found an available appointment on {formatted_time}{transport_msg}. Would you like to book this appointment?",
-            "slot": closest_slot,
-            "require_input": True,
-            "input_type": "yes_no"
-        }
 
 # Example usage
 if __name__ == "__main__":
